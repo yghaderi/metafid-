@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "metafid"
+version = "0.1.0"
+description = ""
+authors = ["Yaghoub Ghadri <y.ghaderi@outlook.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^1.24.2"
+
+
+[[tool.poetry.source]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+default = false
+secondary = false
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+packages = [
+    {include="metafid", from="src"},
+    {include="metafid.ta", flom="src"},
+]
+
+exclude = ["dist",
+]
+
+
+[tool.poetry.urls]
+docs='https://progressbar-2.readthedocs.io/'
