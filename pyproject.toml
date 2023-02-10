@@ -11,8 +11,8 @@ numpy = "^1.24.2"
 
 
 [[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
+name = "metafid"
+url = "https://github.com/yghaderi/metafid"
 default = false
 secondary = false
 
@@ -28,6 +28,5 @@ packages = [
 exclude = ["dist",
 ]
 
-
 [tool.poetry.urls]
-docs='https://progressbar-2.readthedocs.io/'
+docs=""
