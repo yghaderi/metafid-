@@ -23,7 +23,7 @@ build-backend = "poetry.core.masonry.api"
 packages = [
     {include="metafid", from="src"},
     {include="metafid.quant", flom="src"},
-    {include="metafid.option", flom="src"},
+    {include="metafid.deriv", flom="src"},
     {include="metafid.ta", flom="src"},
 ]
 
