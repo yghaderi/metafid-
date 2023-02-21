@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from scipy.stats import norm
 
 
@@ -21,18 +22,36 @@ class Pricing:
         """
         pass
 
-    def black_scholes(self, S_0, K, T, r, sigma, type):
-        d_1 = (
-                np.log(S_0 / K) + (r + pow(sigma, 2) / 2 * T) / (sigma * np.sqrt(T))
-        )
-        d_2 = d_1 - sigma * np.sqrt(T)
+    def black_scholes(self, s_0: float, div: float, k: float, t: float, r: float, sigma: float, type: str):
+
+        n = 252
         if type == "call":
-            N_d_1 = norm.cdf(d_1, 0, 1)
-            N_d_2 = norm.cdf(d_2, 0, 1)
-            val = S_0 * N_d_1 - K * np.exp(-r * T) * N_d_2
+            s = s_0 - div / pow((1 + r), t)
+        elif type == "put":
+            s = s_0
+
+        d_1 = (
+                np.log(s / k) + (r + pow(sigma, 2) / 2 * t) / (sigma * np.sqrt(t))
+        )
+        d_2 = d_1 - sigma * np.sqrt(t)
+        if type == "call":
+            n_d_1 = norm.cdf(d_1, 0, 1)
+            n_d_2 = norm.cdf(d_2, 0, 1)
+            val = s * n_d_1 - k * np.exp(-r * t) * n_d_2
             return val
         elif type == "put":
-            N_d_1 = norm.cdf(-d_1, 0, 1)
-            N_d_2 = norm.cdf(-d_2, 0, 1)
-            val = K * np.exp(-r * T) * N_d_2 - S_0 * N_d_1
+            n_d_1 = norm.cdf(-d_1, 0, 1)
+            n_d_2 = norm.cdf(-d_2, 0, 1)
+            val = k * np.exp(-r * t) * n_d_2 - s * n_d_1
             return val
+
+
+def sigma(hist: pd.DataFrame, period: int):
+    # calc sigma
+    grouped = hist.groupby(by="ticker")
+    df = pd.DataFrame()
+    for name, group in grouped:
+        group = group.assign(log_return=np.log(1 + group.close.pct_change()))
+        group = group.assign(sigma=group.log_return.rolling(period).std())
+        df = pd.concat([df, group])
+    return df
