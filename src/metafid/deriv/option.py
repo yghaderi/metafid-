@@ -1,10 +1,21 @@
 import numpy as np
 import pandas as pd
+from operator import mul, truediv, add
 from scipy.stats import norm
+import finpy_tse as fpy
+import jdatetime as jdt
 
 
 class Pricing:
-    def pricing(r: float, type: str, n: int = 250, n_sim: int = 10 ** 6):
+
+    def __init__(self, r: float = 0.25):
+        self.N = 252
+        self.Y = 365
+        self.today = str(jdt.date.today())
+        self.ago_700 = str(jdt.date.today() - jdt.timedelta(days=700))
+        self.r = r
+
+    def black_scholes(self, s_0: float, k: float, t: float, sigma: float, type_: str, div: float = 0):
         """
         Pricing European options for Tehran Stuck Exchange.
         We use Monte Carlo simulations(MCS) and Black-Scholes(BS) models for pricing.
@@ -20,38 +31,85 @@ class Pricing:
                 sigma	=	volatility of the asset
         :return:
         """
-        pass
-
-    def black_scholes(self, s_0: float, div: float, k: float, t: float, r: float, sigma: float, type: str):
-
-        n = 252
-        if type == "call":
-            s = s_0 - div / pow((1 + r), t)
-        elif type == "put":
+        sigma = mul(sigma, np.sqrt(self.N))
+        t = truediv(t, self.Y)
+        if type_ == "call":
+            s = s_0 - div / pow((1 + self.r), t)
+        elif type_ == "put":
             s = s_0
 
-        d_1 = (
-                np.log(s / k) + (r + pow(sigma, 2) / 2 * t) / (sigma * np.sqrt(t))
-        )
+        d_1 = add(np.log(s / k), (self.r + mul(truediv(pow(sigma, 2), 2), t))) / (sigma * np.sqrt(t))
         d_2 = d_1 - sigma * np.sqrt(t)
-        if type == "call":
+
+        if type_ == "call":
             n_d_1 = norm.cdf(d_1, 0, 1)
             n_d_2 = norm.cdf(d_2, 0, 1)
-            val = s * n_d_1 - k * np.exp(-r * t) * n_d_2
+            val = s * n_d_1 - k * np.exp(-self.r * t) * n_d_2
             return val
-        elif type == "put":
+        elif type_ == "put":
             n_d_1 = norm.cdf(-d_1, 0, 1)
             n_d_2 = norm.cdf(-d_2, 0, 1)
-            val = k * np.exp(-r * t) * n_d_2 - s * n_d_1
+            val = k * np.exp(-self.r * t) * n_d_2 - s * n_d_1
             return val
 
+    def sigma(self, hist: pd.DataFrame):
+        # calc sigma
+        grouped = hist.groupby(by="ticker")
+        df = pd.DataFrame()
+        for name, group in grouped:
+            length = 90 if truediv(len(group), 1.6) >= 90 else truediv(len(group), 1.6)
+            group = group.assign(log_return=np.log(1 + group.adj_final.pct_change()))
+            group = group.assign(sigma=group.log_return.rolling(length).std())
+            df = pd.concat([df, group])
+        return df
 
-def sigma(hist: pd.DataFrame, period: int):
-    # calc sigma
-    grouped = hist.groupby(by="ticker")
-    df = pd.DataFrame()
-    for name, group in grouped:
-        group = group.assign(log_return=np.log(1 + group.close.pct_change()))
-        group = group.assign(sigma=group.log_return.rolling(period).std())
-        df = pd.concat([df, group])
-    return df
+    def hist(self, data: pd.DataFrame):
+        def day_to_ex(ex_date):
+            s_date = ex_date.split("-")
+            t = jdt.date(int(s_date[0]), int(s_date[1]), int(s_date[2])) - jdt.date.today()
+            return t.days
+
+        data["t"] = data.ex_date.apply(lambda x: day_to_ex(x))
+        ticker_hist = pd.DataFrame()
+        for ticker in data.ticker.unique():
+            t_df = fpy.Get_Price_History(
+                stock=ticker,
+                start_date=self.ago_700,
+                end_date=self.today,
+                ignore_date=False,
+                adjust_price=True,
+                show_weekday=False,
+                double_date=True).rename(columns=lambda x: str.lower(x.replace(" ", "_")))
+            length = 90 if truediv(len(t_df), 1.6) >= 90 else truediv(len(t_df), 1.6)
+            t_df = t_df.assign(log_return=np.log(1 + t_df.adj_final.pct_change()))
+            t_df = t_df.assign(sigma=t_df.log_return.rolling(length).std())
+            ticker_hist = pd.concat([ticker_hist, t_df])
+
+        option_hist = pd.DataFrame()
+        for ticker in data.o_ticker.unique():
+            o_df = fpy.Get_Price_History(
+                stock=ticker,
+                start_date=self.ago_700,
+                end_date=self.today,
+                ignore_date=False,
+                adjust_price=True,
+                show_weekday=False,
+                double_date=True).rename(columns=lambda x: "o_" + str.lower(x.replace(" ", "_"))).rename(
+                columns={"o_date": "date"})
+            option_hist = pd.concat([option_hist, o_df])
+        df = ticker_hist.merge(data, on="ticker", how="left")
+        df = df.merge(option_hist, on=["date", "o_ticker"], how="left")
+
+        return df
+
+    def bs(self, data: pd.DataFrame):
+        """
+        Pricing European options for Tehran Stuck Exchange base on Black-Scholes(BS).
+        :param data: its pandas dataframe with ["ticker", "o_ticker", "ex_date", "type", "strike_price"] columns.
+        :return: pandas dataframe
+        """
+        df = self.hist(data=data)
+        df["bs"] = df.apply(
+            lambda x: self.black_scholes(s_0=x["adj_final"], k=x["strike_price"], t=x["t"], type_=x["type"],
+                                         sigma=x["sigma"]), axis=1)
+        return df
