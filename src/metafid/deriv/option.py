@@ -64,12 +64,12 @@ class Pricing:
         return df
 
     def hist(self, data: pd.DataFrame):
-        def day_to_ex(ex_date):
-            s_date = ex_date.split("-")
-            t = jdt.date(int(s_date[0]), int(s_date[1]), int(s_date[2])) - jdt.date.today()
+        def day_to_ex(ex_date, hist_date):
+            exd = ex_date.split("-")
+            hd = hist_date.split("-")
+            t = jdt.date(int(exd[0]), int(exd[1]), int(exd[2])) - jdt.date(int(hd[0]), int(hd[1]), int(hd[2]))
             return t.days
 
-        data["t"] = data.ex_date.apply(lambda x: day_to_ex(x))
         ticker_hist = pd.DataFrame()
         for ticker in data.ticker.unique():
             t_df = fpy.Get_Price_History(
@@ -79,7 +79,7 @@ class Pricing:
                 ignore_date=False,
                 adjust_price=True,
                 show_weekday=False,
-                double_date=True).rename(columns=lambda x: str.lower(x.replace(" ", "_")))
+                double_date=True).reset_index().rename(columns=lambda x: str.lower(x.replace(" ", "_").replace("-", "_")))
             length = 90 if truediv(len(t_df), 1.6) >= 90 else truediv(len(t_df), 1.6)
             t_df = t_df.assign(log_return=np.log(1 + t_df.adj_final.pct_change()))
             t_df = t_df.assign(sigma=t_df.log_return.rolling(length).std())
@@ -99,6 +99,7 @@ class Pricing:
             option_hist = pd.concat([option_hist, o_df])
         df = ticker_hist.merge(data, on="ticker", how="left")
         df = df.merge(option_hist, on=["date", "o_ticker"], how="left")
+        df["t"] = df.apply(lambda x: day_to_ex(ex_date=x["ex_date"], hist_date=x["j_date"]), axis=1)
 
         return df
 
