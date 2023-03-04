@@ -1,6 +1,9 @@
+import pandas as pd
+
+
 class OptionStrategy:
 
-    def covered_call(self, purch_assetـprice: float, current_asset_price: float, premium: float, strike_price: float):
+    def covered_call(self, df):
         """
         خرید داراییِ پایه و فروشِ همزمانِ اختیارِ خرید
         سود-زیان برابر ارزشِ فروش اختیار و تفاوت ارزشِ روزِ دارایی ( در صورت افزایش تا حد قیمتِ اعمال) با ارزشِ خریدِ دارایی است.
@@ -15,10 +18,11 @@ class OptionStrategy:
                 crrent_profit : بر اساسِ قیمتِ کنونیِ داراییِ پایه محاسبه می‌شود
                 pct_current_profit :
         """
-        self.max_ptnl_profit = strike_price - purch_assetـprice + premium
-        self.breck_even = purch_assetـprice - premium
-        self.pct_max_profit = self.max_ptnl_profit / self.breck_even * 100
-        self.crrent_profit = min(strike_price, current_asset_price) - purch_assetـprice + premium
-        self.pct_current_profit = self.crrent_profit / self.breck_even * 100
+        df = df.assign(max_ptnl_profit=df.strike_price - df.adj_final + df.o_adj_final)
+        df = df.assign(break_even=df.adj_final - df.o_adj_final)
+        df = df.assign(pct_max_profit=df.max_ptnl_profit / df.break_even * 100)
+        df["current_profit"] = df.apply(
+            lambda x: min(x["strike_price"], x["adj_final"]) - x["adj_final"] + x["o_adj_final"], axis=1)
+        df = df.assign(pct_current_profit=df.current_profit / df.break_even * 100)
 
-        return self
+        return df

@@ -79,7 +79,8 @@ class Pricing:
                 ignore_date=False,
                 adjust_price=True,
                 show_weekday=False,
-                double_date=True).reset_index().rename(columns=lambda x: str.lower(x.replace(" ", "_").replace("-", "_")))
+                double_date=True).reset_index().rename(
+                columns=lambda x: str.lower(x.replace(" ", "_").replace("-", "_")))
             length = 90 if truediv(len(t_df), 1.6) >= 90 else truediv(len(t_df), 1.6)
             t_df = t_df.assign(log_return=np.log(1 + t_df.adj_final.pct_change()))
             t_df = t_df.assign(sigma=t_df.log_return.rolling(length).std())
@@ -87,18 +88,22 @@ class Pricing:
 
         option_hist = pd.DataFrame()
         for ticker in data.o_ticker.unique():
-            o_df = fpy.Get_Price_History(
-                stock=ticker,
-                start_date=self.ago_700,
-                end_date=self.today,
-                ignore_date=False,
-                adjust_price=True,
-                show_weekday=False,
-                double_date=True).rename(columns=lambda x: "o_" + str.lower(x.replace(" ", "_"))).rename(
-                columns={"o_date": "date"})
-            option_hist = pd.concat([option_hist, o_df])
+            try:
+                o_df = fpy.Get_Price_History(
+                    stock=ticker,
+                    start_date=self.ago_700,
+                    end_date=self.today,
+                    ignore_date=False,
+                    adjust_price=True,
+                    show_weekday=False,
+                    double_date=True).rename(columns=lambda x: "o_" + str.lower(x.replace(" ", "_"))).rename(
+                    columns={"o_date": "date"})
+                option_hist = pd.concat([option_hist, o_df])
+            except:
+                print(f" داده‌ای برایِ «{ticker}» وجود ندارد", end="\r")
         df = ticker_hist.merge(data, on="ticker", how="left")
         df = df.merge(option_hist, on=["date", "o_ticker"], how="left")
+        df = df[df.o_adj_final > 0]
         df["t"] = df.apply(lambda x: day_to_ex(ex_date=x["ex_date"], hist_date=x["j_date"]), axis=1)
 
         return df
