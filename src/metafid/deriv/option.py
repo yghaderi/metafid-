@@ -33,10 +33,8 @@ class Pricing:
         """
         sigma = mul(sigma, np.sqrt(self.N))
         t = truediv(t, self.Y)
-        if type_ == "call":
-            s = s_0 - div / pow((1 + self.r), t)
-        elif type_ == "put":
-            s = s_0
+
+        s = s_0 - div / pow((1 + self.r), t) if type_ == "call" else s_0
 
         d_1 = add(np.log(s / k), (self.r + mul(truediv(pow(sigma, 2), 2), t))) / (sigma * np.sqrt(t))
         d_2 = d_1 - sigma * np.sqrt(t)
