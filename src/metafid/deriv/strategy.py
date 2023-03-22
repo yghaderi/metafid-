@@ -18,8 +18,8 @@ class OptionStrategy:
                 pct_current_profit :
         """
         df = df[df.buy_price > 0]
-        stg = namedtuple("Covered-Call", "buy sell")
-        df["buy_sell"] = df.apply(lambda x: stg(buy=x["ua"], sell=x["symbol"]), axis=1)
+        stg = namedtuple("CoveredCall", "buy sell")
+        df["strategy"] = df.apply(lambda x: stg(buy=x["ua"], sell=x["symbol"]), axis=1)
         df = df.assign(max_pot_profit=df.strike_price - df.ua_sell_price + df.buy_price)
         df = df.assign(break_even=df.ua_sell_price - df.buy_price)
         df = df.assign(pct_max_profit=df.max_pot_profit / df.break_even * 100)
@@ -46,8 +46,8 @@ class OptionStrategy:
                 pct_current_profit :
         """
         df = df[df.sell_price > 0]
-        stg = namedtuple("Married-Put", "buy buy_")
-        df["buy_buy"] = df.apply(lambda x: stg(buy=x["ua"], buy_=x["symbol"]), axis=1)
+        stg = namedtuple("MarriedPut", "buy buy_")
+        df["strategy"] = df.apply(lambda x: stg(buy=x["ua"], buy_=x["symbol"]), axis=1)
         df = df.assign(max_pot_profit="indefinite")
         df = df.assign(break_even=df.ua_sell_price + df.sell_price)
         df["current_profit"] = df.apply(
@@ -71,7 +71,7 @@ class OptionStrategy:
                 max_pot_profit: max_pot_profit
                 current_profit: current_profit
         """
-        stg = namedtuple("Bull-Call-Spread", "sell buy")
+        stg = namedtuple("BullCallSpread", "sell buy")
         groups = df.groupby(by=["ua", "t"])
         df_ = pd.DataFrame()
         for name, group in groups:
@@ -133,57 +133,77 @@ class OptionStrategy:
         return df_
 
     def bear_call_spread(self, df):
-        groups = df.groupby(by=["ticker", "t"])
+        """
+        فروش اختیار خرید با قیمتِ اعمالِ پایین-تر و خرید اختیارِ خریدِ با قیمتِ اعمالِ بالا-تر و تاریخِ اعمالِ همسان
+        بیشینه سود برابر است باپرمیوم دریافتی
+        بیشینه ضرر هم برابر است با تفاوتِ بین دو قیمتِ اعمال و پرمیومِ دریافتی
+        :param df: with (ua, symbol, t, strike_price, ua_final, sell_price, buy_price) columns. ua: Underlying Asset
+        :return:max_pot_loss: max_pot_loss
+                max_pot_profit: max_pot_profit
+                current_profit: current_profit
+        """
+        stg = namedtuple("BearCallSpread", "sell buy")
+        groups = df.groupby(by=["ua", "t"])
         df_ = pd.DataFrame()
         for name, group in groups:
             group.reset_index(inplace=True)
             group = group.sort_values(by=["strike_price"], ascending=True)
             if len(group) > 1:
-                combo_o_ticker = list(combinations(group.o_ticker, 2))
-                combo_strike_price = list(combinations(group.strike_price, 2))
-                combo_o_adj_final = list(combinations(group.o_adj_final, 2))
-                combo_bs = list(combinations(group.bs, 2))
-                max_pot_profit = [ps - pb for ps, pb in combo_o_adj_final]
-                max_pot_loss = list(
-                    map(add, [i - j for i, j in combo_strike_price], max_pot_profit)
+                combo_symbol = list(
+                    stg(sell=s, buy=b) for s, b in combinations(group.symbol, 2)
                 )
-                break_even = list(
-                    map(add, [i for i, _ in combo_strike_price], max_pot_profit)
+                combo_strike_price = list(
+                    stg(sell=s, buy=b) for s, b in combinations(group.strike_price, 2)
+                )
+                combo_ob_price = list(
+                    stg(sell=s, buy=b)
+                    for s, b in combinations(
+                        group[["sell_price", "buy_price"]].itertuples(index=False), 2
+                    )
+                )
+                combo_bs = list(
+                    stg(sell=s, buy=b) for s, b in combinations(group.bs, 2)
+                )
+                max_pot_profit = [
+                    ps.buy_price - pb.sell_price for ps, pb in combo_ob_price
+                ]
+                max_pot_loss = list(
+                    map(add, [ss - sb for ss, sb in combo_strike_price], max_pot_profit)
                 )
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s >= group.adj_final.values[0] for s in combo_strike_price[i]
+                        s >= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_profit[i])
                     elif all(
-                        s <= group.adj_final.values[0] for s in combo_strike_price[i]
+                        s <= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_loss[i])
                     else:
                         current_profit.append(
-                            group.adj_final.values[0]
-                            - combo_strike_price[i][1]
-                            + max_pot_loss[i]
+                            -group.ua_final.values[0]
+                            + combo_strike_price[i].sell
+                            + max_pot_profit[i]
                         )
 
                 df_group = pd.DataFrame(
                     {
-                        "o_ticker": combo_o_ticker,
+                        "symbol": combo_symbol,
                         "strike_price": combo_strike_price,
                         "t": group.t.values[0],
                         "bs": combo_bs,
-                        "adj_final": group.adj_final.values[0],
-                        "o_adj_final": combo_o_adj_final,
+                        "ua_final": group.ua_final.values[0],
+                        "ob_price": combo_ob_price,
                         "max_pot_loss": max_pot_loss,
                         "max_pot_profit": max_pot_profit,
                         "current_profit": current_profit,
-                        "break_even": break_even,
                     }
                 )
                 df_ = pd.concat([df_, df_group])
         return df_
 
+    #####################
     def bull_put_spread(self, df):
         stg = namedtuple("Strategy", "sell buy")
         groups = df.groupby(by=["ticker", "t"])
@@ -358,3 +378,68 @@ class OptionStrategy:
                 )
                 df_ = pd.concat([df_, df_group])
         return df_
+
+
+#################
+
+
+def long_straddle(df):
+    """
+    A long straddle strategy is an options strategy that involves buying a call and a put on the same
+    underlying asset with the same strike price and expiration date. The strike price is usually at-the-money
+     or close to it. The goal of this strategy is to profit from a very strong move in either direction by the
+      underlying asset, often triggered by a newsworthy event.
+
+    :param df: with (strike_price, ua_final, call_buy_price, put_buy_price) columns
+    :return:maximum loss: net premium received
+            maximum profit: unlimited
+            lower break-even: strike price – net premium
+            upper break-even: strike price  + net premium
+    """
+    stg = namedtuple("LongStraddle", "buy_c buy_p")
+    df = df.assign(max_pot_loss=-df.call_sell_price - df.put_sell_price)
+    df = df.assign(
+        lower_break_even=df.strike_price + df.max_pot_loss,
+        upper_break_even=df.strike_price - df.max_pot_loss,
+    )
+    df["current_profit"] = df.apply(
+        lambda x: max(
+            x["max_pot_loss"],
+            abs(x["ua_final"] - x["strike_price"]) + x["max_pot_loss"],
+        ),
+        axis=1,
+    )
+    return df.sort_values(by="current_profit", ascending=False)
+
+
+def short_straddle(df):
+    """
+    price and expiration date. It is used when the trader believes the underlying asset will not move significantly
+     higher or lower over the lives of the options contracts.
+
+    The strategy looks to take advantage of a drop in volatility, time decay, and little or no movement from the
+     underlying asset.
+
+    Lower Brea-keven = Strike Price – Net Premium
+    Upper Break-even = Strike Price  + Net Premium
+    :param df: with (strike_price, ua_final, call_buy_price, put_buy_price) columns
+    :return:maximum loss: unlimited
+            maximum profit = net premium received
+            lower brea-keven = strike price – net premium
+            upper break-even = strike price  + net premium
+
+    """
+    stg = namedtuple("ShortStraddle", "sell_c sell_p")
+    df = df.assign(max_pot_profit=df.call_buy_price + df.put_buy_price)
+    df = df.assign(
+        lower_break_even=df.strike_price - df.max_pot_profit,
+        upper_break_even=df.strike_price + df.max_pot_profit,
+    )
+    df["current_profit"] = df.apply(
+        lambda x: min(
+            x["max_pot_profit"],
+            -abs(x["ua_final"] - x["strike_price"]) + x["max_pot_profit"],
+        ),
+        axis=1,
+    )
+    return df.sort_values(by="current_profit", ascending=False)
