@@ -12,13 +12,14 @@ class TSETMC:
         """
         self.ua = ua
         self.drop_cols = drop_cols
-        self.headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"}
-
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"
+        }
 
     def mw(self):
-
         r = requests.get(
-            "http://www.tsetmc.com/tsev2/data/MarketWatchPlus.aspx", headers=self.headers
+            "http://www.tsetmc.com/tsev2/data/MarketWatchPlus.aspx",
+            headers=self.headers,
         )
         main_text = r.text
         ob_df = pd.DataFrame((main_text.split("@")[3]).split(";"))
@@ -77,12 +78,19 @@ class TSETMC:
         ]
         mw_df.set_index("web_id", inplace=True)
         df = mw_df.join(ob_df)
-        df = df.assign(dt=jdt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        def replace_(x):
+            return x.replace("ي", "ی").replace("ك", "ک")
+
+        df = df.assign(
+            dt=jdt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            symbol=df.symbol.map(replace_),
+            name=df.name.map(replace_),
+        )
         if self.drop_cols:
             return df.drop(columns=self.drop_cols, axis=1)
         else:
             return df
-
 
     def option_mv(self):
         mw_df = self.mw()
@@ -95,7 +103,9 @@ class TSETMC:
         ua_df.rename(columns={"ua_symbol": "ua"}, inplace=True)
         ua_df.drop_duplicates(inplace=True)
 
-        mw_df = mw_df[mw_df.name.str.startswith("اختيار")]
+        mw_df = mw_df[mw_df.name.str.startswith("اختیار")].rename(
+            columns={"symbol": "option"}
+        )
 
         def expand_option_info(df):
             def clean_date(x):
@@ -110,7 +120,7 @@ class TSETMC:
                     return None
 
             def clean_ua(x):
-                return x.replace("اختيارخ ", "").replace("اختيارف ", "")
+                return x.replace("اختیارخ ", "").replace("اختیارف ", "")
 
             def day_to_ex(ex_date):
                 y, m, d = map(int, (tuple(ex_date.split("-"))))
