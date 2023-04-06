@@ -139,4 +139,9 @@ class TSETMC:
 
         df = expand_option_info(mw_df)
         df = df.apply(pd.to_numeric, errors="ignore")
-        return df
+
+        def option_type(x):
+            return "call" if x.startswith("ض") else "put"
+
+        df = df.assign(type=df.option.map(option_type))
+        return df[df.t > 0]

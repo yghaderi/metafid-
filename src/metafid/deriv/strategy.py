@@ -5,7 +5,28 @@ from collections import namedtuple
 
 
 class OptionStrategy:
-    def covered_call(self, df: pd.DataFrame):
+    def __init__(self, call: pd.DataFrame, put: pd.DataFrame, pct_daily_cp: float = None) -> None:
+        self.call = call
+        self.put = put
+        self.pct_daily_cp = pct_daily_cp
+        self.rep_df = pd.DataFrame(
+            columns=["strategy", "position", "ua", "ua_final", "t", "bs", "max_pot_profit", "max_pot_loss",
+                     "break_even", "current_profit", "pct_cp", "pct_daily_cp", "evaluation"])
+
+    def rep_columns(self, cols):
+        return [i for i in cols if i in self.rep_df.columns]
+
+    def position(self, df):
+        def replace_(t: str, char):
+            for i in char:
+                t = t.replace(i, "")
+            return t
+
+        df[["strategy", "position"]] = df.stg.map(str).str.split("(", expand=True)
+        df["position"] = df.position.apply(lambda x: replace_(x, ["'", ")"]))
+        return df
+
+    def covered_call(self):
         """
         خرید داراییِ پایه و فروشِ همزمانِ اختیارِ خرید
         سود-زیان برابر ارزشِ فروش اختیار و تفاوت ارزشِ روزِ دارایی ( در صورت افزایش تا حد قیمتِ اعمال) با ارزشِ خریدِ دارایی است.
@@ -13,26 +34,27 @@ class OptionStrategy:
         :param df: with (ua, symbol, strike_price, ua_sell_price, buy_price) columns. ua: Underlying Asset
         :return: max_pot_profit: حداکثر سود بالقوه- در شرایطی ایجاد می‌شود که قیمتِ داراییِ پایه در تاریخ سر-رسید از قیمتِ اعمال بالاتر-برابر باشد
                 break_even : اگر قیمتِ داراییِ پایه از این قیمت پایین-تر بیاد، معامله ،وارد زیان می‌شود
-                pct_max_profit :
+                pct_max_loss : با فرض اینکه قیمتِ دارایی پایه صفر شود، برابر است با پرمیومٍ دریافتی منهای قیمتِ خریدِ دارایی پایه
                 current_profit : بر اساسِ قیمتِ کنونیِ داراییِ پایه محاسبه می‌شود
                 pct_current_profit :
         """
-        df = df[df.buy_price > 0]
-        stg = namedtuple("CoveredCall", "buy sell")
-        df["strategy"] = df.apply(lambda x: stg(buy=x["ua"], sell=x["symbol"]), axis=1)
-        df = df.assign(max_pot_profit=df.strike_price - df.ua_sell_price + df.buy_price)
-        df = df.assign(break_even=df.ua_sell_price - df.buy_price)
-        df = df.assign(pct_max_profit=df.max_pot_profit / df.break_even * 100)
-        df["current_profit"] = df.apply(
-            lambda x: min(x["strike_price"], x["ua_sell_price"])
-            - x["ua_sell_price"]
-            + x["buy_price"],
-            axis=1,
-        )
-        df = df.assign(pct_current_profit=df.current_profit / df.break_even * 100)
-        df = df.assign(pct_profit_per_day=df.pct_current_profit / df.t)
+        df = self.call[self.call.buy_price > 0].copy()
+        stg = namedtuple("CoveredCall", "buy buy_at sell sell_at")
+        df["stg"] = df.apply(lambda x: stg(buy=x["ua"], buy_at=x["ua_final"], sell=x["option"], sell_at=x["buy_price"]),
+                             axis=1)
+        df = self.position(df)
 
-        return df.sort_values(by="pct_profit_per_day", ascending=False)
+        df = df.assign(max_pot_profit=df.strike_price - df.ua_final + df.buy_price,
+                       max_pot_loss=df.buy_price - df.ua_final,
+                       break_even=df.ua_final - df.buy_price)
+        df["current_profit"] = df.max_pot_profit
+        df = df.assign(pct_cp=df.current_profit / df.break_even * 100).round(2)
+        df = df.assign(pct_daily_cp=df.pct_cp / df.t).round(2)
+        df = df[self.rep_columns(df.columns)]
+        if self.pct_daily_cp:
+            return df[df.pct_daily_cp > self.pct_daily_cp]
+        else:
+            return df
 
     def married_put(self, df: pd.DataFrame):
         """
@@ -52,8 +74,8 @@ class OptionStrategy:
         df = df.assign(break_even=df.ua_sell_price + df.sell_price)
         df["current_profit"] = df.apply(
             lambda x: max(x["strike_price"], x["ua_sell_price"])
-            - x["ua_sell_price"]
-            - x["sell_price"],
+                      - x["ua_sell_price"]
+                      - x["sell_price"],
             axis=1,
         )
         df = df.assign(pct_current_profit=df.current_profit / df.break_even * 100)
@@ -102,11 +124,11 @@ class OptionStrategy:
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s <= group.ua_final.values[0] for s in combo_strike_price[i]
+                            s <= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_profit[i])
                     elif all(
-                        s >= group.ua_final.values[0] for s in combo_strike_price[i]
+                            s >= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_loss[i])
                     else:
@@ -173,11 +195,11 @@ class OptionStrategy:
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s >= group.ua_final.values[0] for s in combo_strike_price[i]
+                            s >= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_profit[i])
                     elif all(
-                        s <= group.ua_final.values[0] for s in combo_strike_price[i]
+                            s <= group.ua_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_loss[i])
                     else:
@@ -233,11 +255,11 @@ class OptionStrategy:
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s <= group.adj_final.values[0] for s in combo_strike_price[i]
+                            s <= group.adj_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_profit[i])
                     elif all(
-                        s >= group.adj_final.values[0] for s in combo_strike_price[i]
+                            s >= group.adj_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_loss[i])
                     else:
@@ -290,11 +312,11 @@ class OptionStrategy:
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s >= group.adj_final.values[0] for s in combo_strike_price[i]
+                            s >= group.adj_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_profit[i])
                     elif all(
-                        s <= group.adj_final.values[0] for s in combo_strike_price[i]
+                            s <= group.adj_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(max_pot_loss[i])
                     else:
@@ -347,7 +369,7 @@ class OptionStrategy:
                 current_profit = []
                 for i in range(len(combo_strike_price)):
                     if all(
-                        s >= group.adj_final.values[0] for s in combo_strike_price[i]
+                            s >= group.adj_final.values[0] for s in combo_strike_price[i]
                     ):
                         current_profit.append(premium[i])
                     elif combo_strike_price[i].buy >= group.adj_final.values[0]:
@@ -378,6 +400,9 @@ class OptionStrategy:
                 )
                 df_ = pd.concat([df_, df_group])
         return df_
+
+    def all_strategy(self):
+        return pd.concat([self.rep_df, self.covered_call()])
 
 
 #################

@@ -1,6 +1,5 @@
 import pandas as pd
 import psycopg
-import re
 
 
 class DB:

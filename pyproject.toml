@@ -27,6 +27,7 @@ packages = [
     {include="metafid/ta", flom="src"},
     {include="metafid/data", flom="src"},
     {include="metafid/mfw", flom="src"},
+    {include="metafid/mfw/deriv", flom="src"},
 ]
 
 exclude = ["dist",
