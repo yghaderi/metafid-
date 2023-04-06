@@ -5,12 +5,10 @@ import re
 
 
 class TSETMC:
-    def __init__(self, ua: list = None, drop_cols: list = None) -> None:
+    def __init__(self, drop_cols: list = None) -> None:
         """
-        :param ua: Underlying Asset
         :param drop_cols: List of columns you want to drop
         """
-        self.ua = ua
         self.drop_cols = drop_cols
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"
@@ -92,14 +90,19 @@ class TSETMC:
         else:
             return df
 
-    def option_mv(self):
+    def option_mv(self, ua: list = None):
+        """
+
+        :param ua:Underlying Asset list.
+        :return:
+        """
         mw_df = self.mw()
 
         ua_df = mw_df[
-            (mw_df.symbol.isin(self.ua))
+            (mw_df.symbol.isin(ua))
             & (mw_df.value.astype(int) > 0)
             & (mw_df.ob_depth.astype(int) == 1)
-        ].add_prefix("ua_")
+            ].add_prefix("ua_")
         ua_df.rename(columns={"ua_symbol": "ua"}, inplace=True)
         ua_df.drop_duplicates(inplace=True)
 
@@ -107,7 +110,7 @@ class TSETMC:
             columns={"symbol": "option"}
         )
 
-        def expand_option_info(df):
+        def expand_option_info(df_):
             def clean_date(x):
                 date_ = re.findall("[0-9]+", x)
                 date_ = "".join(date_)
@@ -126,13 +129,13 @@ class TSETMC:
                 y, m, d = map(int, (tuple(ex_date.split("-"))))
                 return (jdt.date(y, m, d) - jdt.date.today()).days
 
-            df[["ua", "strike_price", "ex_date"]] = df.name.str.split("-", expand=True)
-            df = df.assign(ua=df.ua.map(clean_ua))
-            df = df.merge(ua_df, on="ua", how="inner")
-            df = df[~df.ex_date.isnull()]
-            df = df.assign(ex_date=df.ex_date.map(clean_date))
-            df = df.assign(t=df.ex_date.map(day_to_ex))
-            return df
+            df_[["ua", "strike_price", "ex_date"]] = df_.name.str.split("-", expand=True)
+            df_ = df_.assign(ua=df_.ua.map(clean_ua))
+            df_ = df_.merge(ua_df, on="ua", how="inner")
+            df_ = df_[~df_.ex_date.isnull()]
+            df_ = df_.assign(ex_date=df_.ex_date.map(clean_date))
+            df_ = df_.assign(t=df_.ex_date.map(day_to_ex))
+            return df_
 
         df = expand_option_info(mw_df)
         df = df.apply(pd.to_numeric, errors="ignore")

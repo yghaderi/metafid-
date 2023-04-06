@@ -37,6 +37,6 @@ class RetailInstitutionalPower:
         df["r_buyer_power"] = df["vol_buy_r"] / df["no_buy_r"]
         df["r_seller_power"] = df["vol_sell_r"] / df["no_sell_r"]
         df["i_buyer_power"] = df["vol_buy_i"] / df["no_buy_i"]
-        df["i_buyer_power"] = df["vol_sell_i"] / df["no_sell_i"]
+        df["i_seller_power"] = df["vol_sell_i"] / df["no_sell_i"]
         return df
 
