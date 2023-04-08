@@ -47,7 +47,7 @@ class OptionStrategy:
         df = df.assign(max_pot_profit=df.strike_price - df.ua_final + df.buy_price,
                        max_pot_loss=df.buy_price - df.ua_final,
                        break_even=df.ua_final - df.buy_price)
-        df["current_profit"] = df.max_pot_profit
+        df["current_profit"] = df.apply(lambda x: min(x["strike_price"], x["ua_final"]) - x["ua_final"] + x["buy_price"] , axis=1)
         df = df.assign(pct_cp=df.current_profit / df.break_even * 100).round(2)
         df = df.assign(pct_daily_cp=df.pct_cp / df.t).round(2)
         df = df[self.rep_columns(df.columns)]
