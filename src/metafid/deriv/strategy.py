@@ -5,9 +5,10 @@ from collections import namedtuple
 
 
 class OptionStrategy:
-    def __init__(self, call: pd.DataFrame, put: pd.DataFrame, pct_daily_cp: float = None) -> None:
+    def __init__(self, call: pd.DataFrame, put: pd.DataFrame, call_put:pd.DataFrame, pct_daily_cp: float = None) -> None:
         self.call = call
         self.put = put
+        self.call_put = call_put
         self.pct_daily_cp = pct_daily_cp
         self.rep_df = pd.DataFrame(
             columns=["strategy", "position", "ua", "ua_final", "t", "bs", "max_pot_profit", "max_pot_loss",
@@ -23,7 +24,7 @@ class OptionStrategy:
             return t
 
         df[["strategy", "position"]] = df.stg.map(str).str.split("(", expand=True)
-        df["position"] = df.position.apply(lambda x: replace_(x, ["'", ")"]))
+        df.loc[:,"position"] = df.position.apply(lambda x: replace_(x, ["'", ")"]))
         return df
 
     def covered_call(self):
@@ -40,7 +41,7 @@ class OptionStrategy:
         """
         df = self.call[self.call.buy_price > 0].copy()
         stg = namedtuple("CoveredCall", "buy buy_at sell sell_at")
-        df["stg"] = df.apply(lambda x: stg(buy=x["ua"], buy_at=x["ua_final"], sell=x["option"], sell_at=x["buy_price"]),
+        df.loc[:,"stg"] = df.apply(lambda x: stg(buy=x["ua"], buy_at=x["ua_final"], sell=x["option"], sell_at=x["buy_price"]),
                              axis=1)
         df = self.position(df)
 
@@ -55,7 +56,52 @@ class OptionStrategy:
             return df[df.pct_daily_cp > self.pct_daily_cp]
         else:
             return df
+    
+    def long_straddle(self):
+        """
+        A long straddle strategy is an options strategy that involves buying a call and a put on the same
+        underlying asset with the same strike price and expiration date. The strike price is usually at-the-money
+        or close to it. The goal of this strategy is to profit from a very strong move in either direction by the
+        underlying asset, often triggered by a newsworthy event.
 
+        :param df: with (strike_price, ua_final, call_buy_price, put_buy_price) columns
+        :return:maximum loss: net premium received
+                maximum profit: unlimited
+                lower break-even: strike price – net premium
+                upper break-even: strike price  + net premium
+        """
+        df = self.call_put[(self.call_put.call_sell_price >0) & (self.call_put.put_sell_price >0)]
+        stg = namedtuple("LongStraddle", "buy buy_at buy_ buy_at_")
+        df.loc[:,"stg"] = df.apply(lambda x: stg(buy=x["call_option"], buy_at=x["call_sell_price"], buy_=x["put_option"], buy_at_=x["put_sell_price"]),
+                            axis=1)
+        df = self.position(df)
+        
+        df = df.assign(max_pot_loss=-df.call_sell_price - df.put_sell_price,
+                    max_pot_profit = None)
+        df = df.assign(
+            lower_break_even=df.strike_price + df.max_pot_loss,
+            upper_break_even=df.strike_price - df.max_pot_loss,
+        )
+        df["break_even"] = df.apply(lambda x: f"l: {x['lower_break_even']}, u: {x['upper_break_even']}", axis=1)
+        df["bs"] = df.apply(lambda x: f"c: {x['call_bs']}, p: {x['put_bs']}", axis=1)
+        df["current_profit"] = df.apply(
+            lambda x: max(
+                x["max_pot_loss"],
+                abs(x["ua_final"] - x["strike_price"]) + x["max_pot_loss"],
+            ),
+            axis=1,
+        )
+        df = df.assign(pct_cp=df.current_profit / (df.call_sell_price + df.put_sell_price) * 100).round(2)
+        df = df.assign(pct_daily_cp=df.pct_cp / df.t).round(2)
+        df = df.assign(evaluation = None)
+        df = df[self.rep_columns(df.columns)]
+
+        if self.pct_daily_cp:
+            return df[df.pct_daily_cp > self.pct_daily_cp]
+        else:
+            return df
+
+    ##-------------------------##
     def married_put(self, df: pd.DataFrame):
         """
         خرید داراییِ پایه و خریدِ همزمان اختیارِ فروش
@@ -402,7 +448,7 @@ class OptionStrategy:
         return df_
 
     def all_strategy(self):
-        return pd.concat([self.rep_df, self.covered_call()])
+        return pd.concat([self.rep_df, self.covered_call(), self.long_straddle()])
 
 
 #################

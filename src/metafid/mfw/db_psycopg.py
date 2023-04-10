@@ -15,6 +15,7 @@ class DB:
         self.dbname = dbname
         self.user = user
         self.pass_ = pass_
+        self.engine = sqlalchemy.create_engine(f"postgresql://{self.user}:{self.pass_}@localhost:5432/{self.dbname}")
 
     def insert_data(self, table: str, df: pd.DataFrame):
         """
@@ -68,8 +69,16 @@ class DB:
         """
         Query for take all data.
         :param table: Table name.
-        :param cols: String tuple of columns (ex. "col1,col2,col3")
+        :param cols: String tuple of columns (ex. "col1,col2,col3" or "*")
         :return: Pandas DataFrame of the all data of selected columns from table
         """
-        engine = sqlalchemy.create_engine(f"postgresql://{self.user}:{self.pass_}@localhost:5432/{self.dbname}")
-        return pd.read_sql_query(f"""select {cols} from {table}""", con=engine)
+        return pd.read_sql_query(f"""select {cols} from {table}""", con=self.engine)
+    
+    def query_where(self, table: str, cols: str, where:str):
+        """
+        Query for take certain conditions apply.
+        :param table: Table name.
+        :param cols: String tuple of columns (ex. "col1,col2,col3" or "*")
+        :return: Pandas DataFrame of the all data of selected columns from table
+        """
+        return pd.read_sql_query(f"""select {cols} from {table} where {where}""", con=self.engine)
