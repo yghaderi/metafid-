@@ -1,4 +1,5 @@
 import pandas as pd
+import sqlalchemy
 import psycopg
 
 
@@ -45,7 +46,7 @@ class DB:
                 cur.execute(f"DELETE FROM {table}")
                 conn.commit()
 
-    def query_all(self, table: str, cols: str):
+    def _query(self, table: str, cols: str):
         """
         Query for take all data.
         :param table: Table name.
@@ -60,3 +61,15 @@ class DB:
                 cur.fetchone()
                 conn.commit()
                 return pd.DataFrame([i[0] for i in cur], columns=columns)
+    
+    
+
+    def query_all(self, table: str, cols: str):
+        """
+        Query for take all data.
+        :param table: Table name.
+        :param cols: String tuple of columns (ex. "col1,col2,col3")
+        :return: Pandas DataFrame of the all data of selected columns from table
+        """
+        engine = sqlalchemy.create_engine(f"postgresql://{self.user}:{self.pass_}@localhost:5432/{self.dbname}")
+        return pd.read_sql_query(f"""select {cols} from {table}""", con=engine)
