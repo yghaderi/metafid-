@@ -19,16 +19,17 @@ class OptionStrategyMFW:
         self.db = DB(dbname=dbname, user=user, pass_=pass_)
         self.ua = self.db.query_all(table=ua_table, cols="ua,sigma")
         self.mw = TSETMC(drop_cols=drop_cols)
-        self.omw = self.mw.option_mv(ua=self.ua.ua)
+
         self.call = None
         self.put = None
         self.call_put = None
-        self.omw_df = self.omw.merge(self.ua, on="ua", how="inner")
         self.pct_daily_cp = pct_daily_cp
         self.interval = interval
         self.ostg_table = ostg_table
 
     def data(self):
+        self.omw = self.mw.option_mv(ua=self.ua.ua)
+        self.omw_df = self.omw.merge(self.ua, on="ua", how="inner")
         df = self.omw.merge(self.ua, on="ua", how="inner")
 
         pricing = Pricing()
