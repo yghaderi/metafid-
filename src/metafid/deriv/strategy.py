@@ -480,39 +480,3 @@ class OptionStrategy:
 
     def all_strategy(self):
         return pd.concat([self.rep_df, self.covered_call(), self.long_straddle(), self.bull_call_spread(), self.bear_call_spread()])
-
-
-#################
-
-
-def short_straddle(df):
-    """
-    price and expiration date. It is used when the trader believes the underlying asset will not move significantly
-     higher or lower over the lives of the options contracts.
-
-    The strategy looks to take advantage of a drop in volatility, time decay, and little or no movement from the
-     underlying asset.
-
-    Lower Brea-keven = Strike Price – Net Premium
-    Upper Break-even = Strike Price  + Net Premium
-    :param df: with (strike_price, ua_final, call_buy_price, put_buy_price) columns
-    :return:maximum loss: unlimited
-            maximum profit = net premium received
-            lower brea-keven = strike price – net premium
-            upper break-even = strike price  + net premium
-
-    """
-    stg = namedtuple("ShortStraddle", "sell_c sell_p")
-    df = df.assign(max_pot_profit=df.call_buy_price + df.put_buy_price)
-    df = df.assign(
-        lower_break_even=df.strike_price - df.max_pot_profit,
-        upper_break_even=df.strike_price + df.max_pot_profit,
-    )
-    df["current_profit"] = df.apply(
-        lambda x: min(
-            x["max_pot_profit"],
-            -abs(x["ua_final"] - x["strike_price"]) + x["max_pot_profit"],
-        ),
-        axis=1,
-    )
-    return df.sort_values(by="current_profit", ascending=False)

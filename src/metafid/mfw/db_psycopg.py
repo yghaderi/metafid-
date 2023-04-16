@@ -46,25 +46,7 @@ class DB:
             with conn.cursor() as cur:
                 cur.execute(f"DELETE FROM {table}")
                 conn.commit()
-
-    def _query(self, table: str, cols: str):
-        """
-        Query for take all data.
-        :param table: Table name.
-        :param cols: String tuple of columns (ex. "(col1, col2, col3)")
-        :return: Pandas DataFrame of the all data of selected columns from table
-        """
-        columns = cols.replace(" ", "").replace("(", "").replace(")", "").split(",")
-        with psycopg.connect(f"dbname={self.dbname} user={self.user} password={self.pass_}") as conn:
-            # Open a cursor to perform database operations
-            with conn.cursor() as cur:
-                cur.execute(f"SELECT {cols} FROM {table}")
-                cur.fetchone()
-                conn.commit()
-                return pd.DataFrame([i[0] for i in cur], columns=columns)
     
-    
-
     def query_all(self, table: str, cols: str):
         """
         Query for take all data.
@@ -73,6 +55,19 @@ class DB:
         :return: Pandas DataFrame of the all data of selected columns from table
         """
         return pd.read_sql_query(f"""select {cols} from {table}""", con=self.engine)
+    
+    def join_and_query_where(self, table1:str,join_on_col_t1 , table2:str,join_on_col_t2,cols:str, where):
+        """
+        Join tow table and query for take certain conditions apply.
+        :param table1: Table1 name.
+        :param join_on_col_t1: Join base on col table1.
+        :param table2: Table2 name.
+        :param join_on_col_t2: Join base on col table2.
+        :param cols: String tuple of columns (ex. "col1,col2,col3" or "*"). It is possible to select from both tables.
+        :param where: Create selection conditions that can be applied to both tables.
+        :return: Pandas DataFrame of the all data of selected columns from table. 
+        """
+        return pd.read_sql_query(f"SELECT {cols} FROM {table1} INNER JOIN {table2} ON {table1}.{join_on_col_t1} = {table2}.{join_on_col_t2} WHERE {where};", con=self.engine)
     
     def query_where(self, table: str, cols: str, where:str):
         """
