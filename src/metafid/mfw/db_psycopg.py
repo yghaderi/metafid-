@@ -68,6 +68,18 @@ class DB:
         :return: Pandas DataFrame of the all data of selected columns from table. 
         """
         return pd.read_sql_query(f"SELECT {cols} FROM {table1} INNER JOIN {table2} ON {table1}.{join_on_col_t1} = {table2}.{join_on_col_t2} WHERE {where};", con=self.engine)
+
+    def join_and_query_all(self, table1: str, join_on_col_t1, table2: str, join_on_col_t2, cols: str):
+        """
+        Join tow table and query for take certain conditions apply.
+        :param table1: Table1 name.
+        :param join_on_col_t1: Join base on col table1.
+        :param table2: Table2 name.
+        :param join_on_col_t2: Join base on col table2.
+        :param cols: String tuple of columns (ex. "col1,col2,col3" or "*"). It is possible to select from both tables.
+        :return: Pandas DataFrame of the all data of selected columns from table.
+        """
+        return pd.read_sql_query(f"SELECT {cols} FROM {table1} INNER JOIN {table2} ON {table1}.{join_on_col_t1} = {table2}.{join_on_col_t2}", con=self.engine)
     
     def query_where(self, table: str, cols: str, where:str):
         """

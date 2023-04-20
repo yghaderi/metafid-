@@ -4,19 +4,20 @@ import pandas as pd
 
 
 class Trend:
-    def __init__(self, date, close, order: int = 10):
+    def __init__(self, date,ticker, final, order: int = 8):
         self.date = date
-        self.close = close
+        self.final = final
         self.order = order
-        self.df = pd.DataFrame({"date": self.date, "close": self.close})
+        self.ticker = ticker
+        self.df = pd.DataFrame({"date": self.date,"ticker":self.ticker, "final": self.final})
 
     def peak_trough(self):
         """
-        Recognize local min and max.
+        Recognise local min and max.
         :return: index of local min-max
         """
-        max_idx = argrelextrema(self.close, np.greater_equal, order=self.order)[0]
-        min_idx = argrelextrema(self.close, np.less_equal, order=self.order)[0]
+        max_idx = argrelextrema(self.final, np.greater_equal, order=self.order)[0]
+        min_idx = argrelextrema(self.final, np.less_equal, order=self.order)[0]
         for i in max_idx:
             self.df.loc[i, "peak"] = 1
         for i in min_idx:
@@ -33,8 +34,8 @@ class Trend:
         df = self.peak_trough()
         df_peak = df.dropna(subset="peak")
         df_trough = df.dropna(subset="trough")
-        df_peak = df_peak.assign(hh_lh=df_peak.close > df_peak.close.shift(1))[["date", "hh_lh"]]
-        df_trough = df_trough.assign(ll_hl=df_trough.close < df_trough.close.shift(1))[["date", "ll_hl"]]
+        df_peak = df_peak.assign(hh_lh=df_peak.final > df_peak.final.shift(1))[["date", "hh_lh"]]
+        df_trough = df_trough.assign(ll_hl=df_trough.final < df_trough.final.shift(1))[["date", "ll_hl"]]
         df = df.merge(df_peak, on="date", how="left")
         df = df.merge(df_trough, on="date", how="left")
         return df
@@ -48,6 +49,8 @@ class Trend:
         df = self.separation_peak_trough()
         df["hh_lh"] = df.hh_lh.fillna(method="bfill").fillna(method="ffill")
         df["ll_hl"] = df.ll_hl.fillna(method="bfill").fillna(method="ffill")
+
+        # df = df.assign(trend = df.hh_lh != df.ll_hl)
 
         def recognize_trend(hh_lh, ll_hl):
             if hh_lh:
