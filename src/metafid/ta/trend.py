@@ -65,3 +65,26 @@ class Trend:
 
         df["trend"] = df.apply(lambda r: recognize_trend(hh_lh=r["hh_lh"], ll_hl=r["ll_hl"]), axis=1)
         return df
+
+    def pct_mm_priority(self, period):
+        groups = self.df.groupby(by="ticker")
+        df = pd.DataFrame()
+        for name, group in groups:
+            group.set_index("date", inplace=True)
+            min_max = pd.DataFrame([{"ticker": name,
+                                     "max_date": group.final.idxmax(),
+                                     "max_price": group.final.max(),
+                                     "min_date": group.final.idxmin(),
+                                     "min_price": group.final.min(),
+                                     "last_price": group.final.values[-1]
+                                     }])
+            df = pd.concat([df, min_max])
+        df = df.assign(priority=df.max_date > df.min_date)
+        df[f"pct_mm_{period}"] = df.apply(
+            lambda x: (x["max_price"] / x["min_price"] - 1 if x["priority"] else x["min_price"] / x["max_price"] - 1)*100,
+            axis=1).round(1)
+        df[f"pct_last_{period}"] = df.apply(
+            lambda x: (x["last_price"] / x["max_price"] - 1 if x["priority"] else x["last_price"] / x[
+                "min_price"] - 1)*100, axis=1).round(1)
+        return df[["ticker", f"pct_mm_{period}", f"pct_last_{period}"]]
+
