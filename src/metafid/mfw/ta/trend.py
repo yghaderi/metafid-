@@ -34,7 +34,7 @@ class TrendMFW:
         all_df = pd.DataFrame()
         for p in self.periods:
             date = datetime.datetime.today() - datetime.timedelta(days=p)
-            df = self.db.join_and_query_where(table1="tsedata_histprice", cols="date_id,final,symbol_far", join_on_col_t1="symbol_id", table2="tsedata_ticker", join_on_col_t2="symbol",  where=f"date_id >'{date}'")
+            df = self.db.join_and_query_where(table1="tsedata_histprice", cols="date_id,final,symbol_far", join_on_col_t1="symbol_id", table2="tsedata_ticker", join_on_col_t2="symbol",  where=f"date_id >='{date}'")
             trend = Trend(date=df.date_id, ticker=df.symbol_far, final=df.final)
             pct_df = trend.pct_mm_priority(period=p)
             if len(all_df):
