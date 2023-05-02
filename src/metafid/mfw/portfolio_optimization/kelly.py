@@ -1,21 +1,24 @@
 import datetime
+import pandas as pd
 
 from ..db_psycopg import DB
 from ...portfolio_optimization.kelly import Kelly
 
 
 class KellyMFW:
-    def __init__(self, dbname: str, user: str, pass_: str, tickers: tuple, time_frame, window,
+    def __init__(self, dbname: str, user: str, pass_: str, tickers: tuple, time_frame, window, start_date, end_date,
                  short_selling: bool = False) -> None:
         self.db = DB(dbname=dbname, user=user, pass_=pass_)
-        self.df = self.db.join_and_query_where(table1="tsedata_histprice", cols="date_id,final,symbol_far",
+        self.df = self.db.join_and_query_where(table1="tsedata_histprice", cols="date_id,symbol_far,final",
                                                join_on_col_t1="symbol_id", table2="tsedata_ticker",
-                                               join_on_col_t2="symbol", where=f"symbol_far in {tickers}")
+                                               join_on_col_t2="symbol",
+                                               where=f"date_id BETWEEN {start_date} AND {end_date} symbol_far in {tickers}")
         self.kelly = Kelly(df=self.df, time_frame=time_frame, window=window)
         self.short_selling = short_selling
 
-    def _return(self):
-        kelly_portfolio_return = self.kelly.kelly_portfolio_return(short_selling=self.short_selling).reset_index()
+    def kelly_return(self):
+        kelly_portfolio_return, kelly_allocation = self.kelly.kelly_portfolio_return(
+            short_selling=self.short_selling).reset_index()
         equal_ratio_portfolio_return = self.kelly.equal_weight_portfolio_return().reset_index()
         return kelly_portfolio_return.merge(equal_ratio_portfolio_return, on="date", how="inner")
 
@@ -31,11 +34,12 @@ class KellyMFW:
         return kelly_weight.merge(kelly_allocation, on="ticker", how="inner")
 
     def do_job(self):
-        self.db.drop_all(table="kellyallocation")
-        self.db.insert_data(table="kellyallocation", df=self.kelly_weight())
+        self.db.drop_all(table="po_kellyallocation")
+        self.db.insert_data(table="po_kellyallocation", df=self.kelly_weight())
 
-        self.db.drop_all(table="kellyreturn")
-        self.db.insert_data(table="kellyreturn", df=self.kelly_weight())
+        self.db.drop_all(table="po_kellyreturn")
+        self.db.insert_data(table="po_kellyreturn", df=self.kelly_return())
 
-        print(f'Drop all "kellyallocation" and "kellyreturn" records and insert new data! The time is: {datetime.datetime.now()}\n',
-              end="\r")
+        print(
+            f'Drop all "kellyallocation" and "kellyreturn" records and insert new data! The time is: {datetime.datetime.now()}\n',
+            end="\r")

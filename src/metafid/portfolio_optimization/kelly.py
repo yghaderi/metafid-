@@ -74,7 +74,7 @@ class Kelly:
         kelly_allocation[:] = 1 / len(kelly_allocation)
         return self.calc_return().mul(kelly_allocation / kelly_allocation.sum()).sum(axis=1).add(1).cumprod().sub(
             1).to_frame(
-            'equal_ratio')
+            'equal_weight')
 
     def benchmark_return(self):
         pass
