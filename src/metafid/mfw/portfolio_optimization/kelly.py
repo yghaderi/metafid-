@@ -12,12 +12,17 @@ class KellyMFW:
         self.df = self.db.join_and_query_where(table1="tsedata_histprice", cols="date_id,symbol_far,final",
                                                join_on_col_t1="symbol_id", table2="tsedata_ticker",
                                                join_on_col_t2="symbol",
-                                               where=f"date_id BETWEEN {start_date} AND {end_date} symbol_far in {tickers}")
-        self.kelly = Kelly(df=self.df, time_frame=time_frame, window=window)
+                                               where=f"symbol_far in {tickers} AND date_id BETWEEN '{start_date}' and '{end_date}'")
+        df = self.df.copy()
+        df = df.rename(columns={"date_id":"date"})
+        df = df.pivot(columns="symbol_far", values="final", index="date").rename_axis(None, axis=1)
+        df.reset_index(inplace=True)
+        df["date"] = df["date"].apply(pd.to_datetime)
+        self.kelly = Kelly(df=df, time_frame=time_frame, window=window)
         self.short_selling = short_selling
 
     def kelly_return(self):
-        kelly_portfolio_return, kelly_allocation = self.kelly.kelly_portfolio_return(
+        kelly_portfolio_return = self.kelly.kelly_portfolio_return(
             short_selling=self.short_selling).reset_index()
         equal_ratio_portfolio_return = self.kelly.equal_weight_portfolio_return().reset_index()
         return kelly_portfolio_return.merge(equal_ratio_portfolio_return, on="date", how="inner")
