@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "metafid"
-version = "0.1.5"
+version = "0.1.6"
 description = ""
 authors = ["Yaghoub Ghadri <y.ghaderi@outlook.com>"]
 readme = "README.md"
@@ -31,6 +31,7 @@ packages = [
     {include="metafid/mfw/deriv", flom="src"},
     {include="metafid/mfw/ta", flom="src"},
     {include="metafid/mfw/portfolio_optimization", flom="src"},
+    {include="metafid/algorithm/ta", flom="src"},
 ]
 
 exclude = ["dist",
