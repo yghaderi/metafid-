@@ -3,6 +3,10 @@ import jdatetime as jdt
 import requests
 import re
 
+headers = {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
+}
+
 
 class TSETMC:
     def __init__(self, drop_cols: list = None) -> None:
@@ -145,3 +149,82 @@ class TSETMC:
 
         df = df.assign(type=df.option.map(option_type))
         return df[df.t > 0]
+
+
+class InstrumentInfo:
+    def __init__(self) -> None:
+        self.split_market = {"option": "IRO9", "stock": "IRO1", "etf": ("IRT1", "IRT3")}
+
+    def get_instrument_ids(self, timeout=10):
+        url = "http://tsetmc.com/tsev2/data/MarketWatchPlus.aspx?"
+        r = requests.get(url, timeout=timeout)
+        ids = set(re.findall(r"\d{15,20}", r.text))
+        return list(ids)
+
+    def get_instrument_info(self, web_id: str, timeout=3):
+        url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
+        r = requests.get(url, headers=headers, verify=False, timeout=timeout)
+        return r.json()
+
+    def clean_instrument_info(self, instrument_info: str):
+        instrument = {
+            "symbol": instrument_info["cIsin"][4:8],
+            "name": instrument_info["lVal18"],
+            "symbol_far": instrument_info["lVal18AFC"],
+            "name_far": instrument_info["lVal30"],
+            "isin": instrument_info["cIsin"],
+            "capital": instrument_info["zTitad"],
+            "instrument_code": instrument_info["insCode"],
+            "instrument_id": instrument_info["instrumentID"],
+            "sector_name": instrument_info["sector"]["lSecVal"],
+            "sector_code": instrument_info["sector"]["cSecVal"].replace(" ", ""),
+            "group_type": instrument_info["cgrValCot"],
+            "market_name": instrument_info["flowTitle"],
+            "market_code": instrument_info["flow"],
+            "market_type": instrument_info["cgrValCotTitle"],
+            "base_vol": instrument_info["baseVol"],
+            "eps": instrument_info["eps"]["estimatedEPS"],
+            "float_shares_pct": instrument_info["kAjCapValCpsIdx"],
+        }
+        return instrument
+
+    def instrument_info_table(self):
+        instrument_ids = self.get_instrument_ids()
+        df = pd.DataFrame()
+        for web_id in instrument_ids[:40]:
+            ins_info = self.get_instrument_info(id=web_id)["instrumentInfo"]
+            clean_ins_info = self.clean_instrument_info(ins_info)
+            df = pd.concat([df, pd.DataFrame.from_records([clean_ins_info])], ignore_index=True)
+        self.stock = df[df["isin"].str.startswith(self.split_market["stock"])]
+        self.option = df[df["isin"].str.startswith(self.split_market["option"])]
+        self.etf = df[df["isin"].str.startswith(self.split_market["etf"])]
+        return self
+
+
+class Orders:
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_best_limits(web_id: str, timeout=3):
+        url = f"http://cdn.tsetmc.com/api/BestLimits/{web_id}"
+        r = requests.get(url, headers=headers, verify=False, timeout=timeout)
+        return r.json()
+
+    def best_limit_table(self, ids: list):
+        cols = {"number": "quote",
+                "zOrdMeDem": "buy_no",
+                "qTitMeDem": "buy_vol",
+                "pMeDem": "buy_price",
+                "pMeOf": "sell_price",
+                "zOrdMeOf": "sell_no",
+                "qTitMeOf": "sell_vol",
+                "insCode": "web_id"}
+        df = pd.DataFrame()
+        for web_id in ids:
+            best_limits = self.get_best_limits(id=web_id)["bestLimits"]
+            best_limits_df = pd.DataFrame.from_records(best_limits).rename(columns=cols)
+            best_limits_df["web_id"] = web_id
+            df = pd.concat([df, best_limits_df])
+        return df
