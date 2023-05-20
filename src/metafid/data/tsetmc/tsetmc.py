@@ -8,27 +8,27 @@ headers = {
 }
 
 
-class TSETMC:
+def get_data(url, timeout=3):
+    return requests.get(url, headers=headers, verify=False, timeout=timeout)
+
+
+class MarketWatch:
     def __init__(self, drop_cols: list = None) -> None:
         """
         :param drop_cols: List of columns you want to drop
         """
         self.drop_cols = drop_cols
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"
-        }
 
-    def mw(self):
-        r = requests.get(
-            "http://www.tsetmc.com/tsev2/data/MarketWatchPlus.aspx",
-            headers=self.headers,
-        )
-        main_text = r.text
-        ob_df = pd.DataFrame((main_text.split("@")[3]).split(";"))
+    def get_mw(self):
+
+        url = "http://www.tsetmc.com/tsev2/data/MarketWatchPlus.aspx"
+        main_text = get_data(url).text
+
+        ob_df = pd.DataFrame((main_text.split("@")[3]).split(";"))  # order book
         ob_df = ob_df[0].str.split(",", expand=True)
         ob_df.columns = [
             "web_id",
-            "ob_depth",
+            "quote",
             "sell_no",
             "buy_no",
             "buy_price",
@@ -39,7 +39,7 @@ class TSETMC:
         ob_df = ob_df[
             [
                 "web_id",
-                "ob_depth",
+                "quote",
                 "sell_no",
                 "sell_vol",
                 "sell_price",
@@ -82,7 +82,7 @@ class TSETMC:
         df = mw_df.join(ob_df)
 
         def replace_(x):
-            return x.replace("ي", "ی").replace("ك", "ک")
+            return x.translate(str.maketrans({"ي": "ی", "ك": "ک"}))
 
         df = df.assign(
             dt=jdt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -94,25 +94,22 @@ class TSETMC:
         else:
             return df
 
-    def option_mv(self, ua: list = None):
+    def option_mv(self):
         """
 
         :param ua:Underlying Asset list.
         :return:
         """
-        mw_df = self.mw()
+        mw_df = self.get_mw()
+        mw_df.drop(["time", "open", "no", "eps", "unknown1", "unknown2", "sector", "day_ul", "day_ll", "mkt_id"],
+                   axis=1, inplace=True)
 
-        ua_df = mw_df[
-            (mw_df.symbol.isin(ua))
-            & (mw_df.value.astype(int) > 0)
-            & (mw_df.ob_depth.astype(int) == 1)
-            ].add_prefix("ua_")
-        ua_df.rename(columns={"ua_symbol": "ua"}, inplace=True)
+        option_df = mw_df[mw_df["isin"].str.startswith("IRO9")].rename(columns={"symbol": "option"})
+
+        ua_df = mw_df[mw_df["isin"].str.startswith("IRO1")].add_prefix("ua_")
+        ua_df.rename(columns={"ua_quote": "quote"}, inplace=True)
         ua_df.drop_duplicates(inplace=True)
-
-        mw_df = mw_df[mw_df.name.str.startswith("اختیار")].rename(
-            columns={"symbol": "option"}
-        )
+        ua_df.drop(["ua_dt", "ua_name"], axis=1, inplace=True)
 
         def expand_option_info(df_):
             def clean_date(x):
@@ -123,50 +120,77 @@ class TSETMC:
                 elif len(date_) == 6:
                     return f"14{date_[:2]}-{date_[2:4]}-{date_[4:6]}"
                 else:
-                    print("bad data!")
+                    print("bad ex-date!")
                     return None
 
-            def clean_ua(x):
-                return x.replace("اختیارخ ", "").replace("اختیارف ", "")
+            def ua(x):
+                return x[4:8]
 
             def day_to_ex(ex_date):
                 y, m, d = map(int, (tuple(ex_date.split("-"))))
                 return (jdt.date(y, m, d) - jdt.date.today()).days
 
             df_[["ua", "strike_price", "ex_date"]] = df_.name.str.split("-", expand=True)
-            df_ = df_.assign(ua=df_.ua.map(clean_ua))
-            df_ = df_.merge(ua_df, on="ua", how="inner")
+            df_["ua"] = df_["isin"].map(ua)
+            ua_df["ua"] = ua_df["ua_isin"].map(ua)
+            df_ = df_.merge(ua_df, on=["ua", "quote"], how="inner")
             df_ = df_[~df_.ex_date.isnull()]
             df_ = df_.assign(ex_date=df_.ex_date.map(clean_date))
             df_ = df_.assign(t=df_.ex_date.map(day_to_ex))
             return df_
 
-        df = expand_option_info(mw_df)
+        df = expand_option_info(option_df)
+
         df = df.apply(pd.to_numeric, errors="ignore")
 
         def option_type(x):
             return "call" if x.startswith("ض") else "put"
 
         df = df.assign(type=df.option.map(option_type))
-        return df[df.t > 0]
+        return df
 
 
 class InstrumentInfo:
-    def __init__(self) -> None:
-        self.split_market = {"option": "IRO9", "stock": "IRO1", "etf": ("IRT1", "IRT3")}
+    def __init__(self):
+        self.mw = self.get_instrument_ids()  # market watch
 
-    def get_instrument_ids(self, timeout=10):
+    def get_instrument_ids(self):
+        def clean_data(text):
+            df = pd.DataFrame((text.split("@")[2]).split(";"))
+            df = df[0].str.split(",", expand=True)
+            df = df.iloc[:, :23]
+            df.columns = [
+                "web_id",
+                "isin",
+                "symbol",
+                "name",
+                "time",
+                "open",
+                "final",
+                "close",
+                "no",
+                "volume",
+                "value",
+                "low",
+                "high",
+                "y_final",
+                "eps",
+                "base_vol",
+                "unknown1",
+                "unknown2",
+                "sector",
+                "day_ul",
+                "day_ll",
+                "share_no",
+                "mkt_id",
+            ]
+            return df
+
         url = "http://tsetmc.com/tsev2/data/MarketWatchPlus.aspx?"
-        r = requests.get(url, timeout=timeout)
-        ids = set(re.findall(r"\d{15,20}", r.text))
-        return list(ids)
+        return clean_data(get_data(url).text)
 
-    def get_instrument_info(self, web_id: str, timeout=3):
-        url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
-        r = requests.get(url, headers=headers, verify=False, timeout=timeout)
-        return r.json()
-
-    def clean_instrument_info(self, instrument_info: str):
+    @staticmethod
+    def _clean_instrument_info(instrument_info: str):
         instrument = {
             "symbol": instrument_info["cIsin"][4:8],
             "name": instrument_info["lVal18"],
@@ -188,31 +212,38 @@ class InstrumentInfo:
         }
         return instrument
 
-    def instrument_info_table(self):
+    def get_instrument_info(self, ids):
+        df = pd.DataFrame()
+        for web_id in ids:
+            url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
+            ins_info = get_data(url).json()["instrumentInfo"]
+            clean_ins_info = self._clean_instrument_info(ins_info)
+            df = pd.concat([df, pd.DataFrame.from_records([clean_ins_info])], ignore_index=True)
+        return df
+
+    def option_info(self):
+        ids = self.mw[self.mw["isin"].str.startswith("IRO9")]
+        df = self.get_instrument_info(ids.web_id.values).rename(columns={"symbol": "ua"})
+        return df.iloc[:, :9]
+
+    def instrument_info(self):
+        split_market = {"option": "IRO9", "stock": "IRO1", "etf": ("IRT1", "IRT3")}
         instrument_ids = self.get_instrument_ids()
         df = pd.DataFrame()
-        for web_id in instrument_ids[:40]:
-            ins_info = self.get_instrument_info(id=web_id)["instrumentInfo"]
-            clean_ins_info = self.clean_instrument_info(ins_info)
+        for web_id in instrument_ids:
+            url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
+            ins_info = get_data(url).json()["instrumentInfo"]
+            clean_ins_info = self._clean_instrument_info(ins_info)
             df = pd.concat([df, pd.DataFrame.from_records([clean_ins_info])], ignore_index=True)
-        self.stock = df[df["isin"].str.startswith(self.split_market["stock"])]
-        self.option = df[df["isin"].str.startswith(self.split_market["option"])]
-        self.etf = df[df["isin"].str.startswith(self.split_market["etf"])]
+        self.stock = df[df["isin"].str.startswith(split_market["stock"])]
+        self.option = df[df["isin"].str.startswith(split_market["option"])]
+        self.etf = df[df["isin"].str.startswith(split_market["etf"])]
         return self
 
 
-class Orders:
+class OrderBook:
 
-    def __init__(self):
-        pass
-
-    @staticmethod
-    def get_best_limits(web_id: str, timeout=3):
-        url = f"http://cdn.tsetmc.com/api/BestLimits/{web_id}"
-        r = requests.get(url, headers=headers, verify=False, timeout=timeout)
-        return r.json()
-
-    def best_limit_table(self, ids: list):
+    def best_limits(self, ids: list):
         cols = {"number": "quote",
                 "zOrdMeDem": "buy_no",
                 "qTitMeDem": "buy_vol",
@@ -223,7 +254,8 @@ class Orders:
                 "insCode": "web_id"}
         df = pd.DataFrame()
         for web_id in ids:
-            best_limits = self.get_best_limits(id=web_id)["bestLimits"]
+            url = f"http://cdn.tsetmc.com/api/BestLimits/{web_id}"
+            best_limits = get_data(url).json()["bestLimits"]
             best_limits_df = pd.DataFrame.from_records(best_limits).rename(columns=cols)
             best_limits_df["web_id"] = web_id
             df = pd.concat([df, best_limits_df])

@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from ...deriv.strategy import OptionStrategy
 from ...deriv.option import Pricing
 from ..db_psycopg import DB
-from ...data.tsetmc import TSETMC
+from src.metafid.data.tsetmc.tsetmc import TSETMC
 
 drop_cols = ["isin", "time", "open", "close", "no", "volume", "low", "high", "y_final", "eps", "base_vol", "unknown1",
              "unknown2", "sector", "day_ul", "day_ll", "share_no", "mkt_id", "sell_no", "buy_no"]
