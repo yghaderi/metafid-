@@ -95,19 +95,14 @@ class MarketWatch:
             return df
 
     def option_mv(self):
-        """
-
-        :param ua:Underlying Asset list.
-        :return:
-        """
         mw_df = self.get_mw()
         mw_df.drop(["time", "open", "no", "eps", "unknown1", "unknown2", "sector", "day_ul", "day_ll", "mkt_id"],
                    axis=1, inplace=True)
 
         option_df = mw_df[mw_df["isin"].str.startswith("IRO9")].rename(columns={"symbol": "option"})
 
-        ua_df = mw_df[mw_df["isin"].str.startswith("IRO1")].add_prefix("ua_")
-        ua_df.rename(columns={"ua_quote": "quote"}, inplace=True)
+        ua_df = mw_df[mw_df["isin"].str.startswith(("IRO1","IRO3", "IRT1", "IRT3"))].add_prefix("ua_")
+        ua_df = ua_df[ua_df.ua_quote.astype(int) == 1]
         ua_df.drop_duplicates(inplace=True)
         ua_df.drop(["ua_dt", "ua_name"], axis=1, inplace=True)
 
@@ -133,7 +128,7 @@ class MarketWatch:
             df_[["ua", "strike_price", "ex_date"]] = df_.name.str.split("-", expand=True)
             df_["ua"] = df_["isin"].map(ua)
             ua_df["ua"] = ua_df["ua_isin"].map(ua)
-            df_ = df_.merge(ua_df, on=["ua", "quote"], how="inner")
+            df_ = df_.merge(ua_df, on="ua", how="inner")
             df_ = df_[~df_.ex_date.isnull()]
             df_ = df_.assign(ex_date=df_.ex_date.map(clean_date))
             df_ = df_.assign(t=df_.ex_date.map(day_to_ex))
@@ -226,19 +221,13 @@ class InstrumentInfo:
         df = self.get_instrument_info(ids.web_id.values).rename(columns={"symbol": "ua"})
         return df.iloc[:, :9]
 
-    def instrument_info(self):
-        split_market = {"option": "IRO9", "stock": "IRO1", "etf": ("IRT1", "IRT3")}
-        instrument_ids = self.get_instrument_ids()
-        df = pd.DataFrame()
-        for web_id in instrument_ids:
-            url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
-            ins_info = get_data(url).json()["instrumentInfo"]
-            clean_ins_info = self._clean_instrument_info(ins_info)
-            df = pd.concat([df, pd.DataFrame.from_records([clean_ins_info])], ignore_index=True)
-        self.stock = df[df["isin"].str.startswith(split_market["stock"])]
-        self.option = df[df["isin"].str.startswith(split_market["option"])]
-        self.etf = df[df["isin"].str.startswith(split_market["etf"])]
-        return self
+    def stock_info(self):
+        ids = self.mw[self.mw["isin"].str.startswith(("IRO1", "IRO3"))]
+        return self.get_instrument_info(ids.web_id.values)
+
+    def etf_info(self):
+        ids = self.mw[self.mw["isin"].str.startswith(("IRT1", "IRT3"))]
+        return self.get_instrument_info(ids.web_id.values)
 
 
 class OrderBook:
