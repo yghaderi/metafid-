@@ -21,13 +21,13 @@ class MarketWatch:
 
     def get_mw(self):
 
-        url = "http://www.tsetmc.com/tsev2/data/MarketWatchPlus.aspx"
+        url = "http://old.tsetmc.com/tsev2/data/MarketWatchPlus.aspx"
         main_text = get_data(url).text
 
         ob_df = pd.DataFrame((main_text.split("@")[3]).split(";"))  # order book
         ob_df = ob_df[0].str.split(",", expand=True)
         ob_df.columns = [
-            "web_id",
+            "ins_id",
             "quote",
             "sell_no",
             "buy_no",
@@ -38,7 +38,7 @@ class MarketWatch:
         ]
         ob_df = ob_df[
             [
-                "web_id",
+                "ins_id",
                 "quote",
                 "sell_no",
                 "sell_vol",
@@ -48,13 +48,13 @@ class MarketWatch:
                 "buy_no",
             ]
         ]
-        ob_df.set_index("web_id", inplace=True)
+        ob_df.set_index("ins_id", inplace=True)
 
         mw_df = pd.DataFrame((main_text.split("@")[2]).split(";"))
         mw_df = mw_df[0].str.split(",", expand=True)
         mw_df = mw_df.iloc[:, :23]
         mw_df.columns = [
-            "web_id",
+            "ins_id",
             "isin",
             "symbol",
             "name",
@@ -78,7 +78,7 @@ class MarketWatch:
             "share_no",
             "mkt_id",
         ]
-        mw_df.set_index("web_id", inplace=True)
+        mw_df.set_index("ins_id", inplace=True)
         df = mw_df.join(ob_df)
 
         def replace_(x):
@@ -99,9 +99,11 @@ class MarketWatch:
         mw_df.drop(["time", "open", "no", "eps", "unknown1", "unknown2", "sector", "day_ul", "day_ll", "mkt_id"],
                    axis=1, inplace=True)
 
-        option_df = mw_df[mw_df["isin"].str.startswith("IRO9")].rename(columns={"symbol": "option"})
+        option_df = mw_df[mw_df["isin"].str.startswith(("IRO9","IROF"))].rename(columns={"symbol": "option"})
 
-        ua_df = mw_df[mw_df["isin"].str.startswith(("IRO1","IRO3", "IRT1", "IRT3"))].add_prefix("ua_")
+        ua_df = mw_df[(mw_df["isin"].str.startswith(("IRO1", "IRO3", "IRT1", "IRT3"))) & (
+            mw_df["isin"].str.endswith("1"))].add_prefix("ua_")
+
         ua_df = ua_df[ua_df.ua_quote.astype(int) == 1]
         ua_df.drop_duplicates(inplace=True)
         ua_df.drop(["ua_dt", "ua_name"], axis=1, inplace=True)
@@ -155,7 +157,7 @@ class InstrumentInfo:
             df = df[0].str.split(",", expand=True)
             df = df.iloc[:, :23]
             df.columns = [
-                "web_id",
+                "ins_id",
                 "isin",
                 "symbol",
                 "name",
@@ -209,8 +211,8 @@ class InstrumentInfo:
 
     def get_instrument_info(self, ids):
         df = pd.DataFrame()
-        for web_id in ids:
-            url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{web_id}"
+        for ins_id in ids:
+            url = f"http://cdn.tsetmc.com/api/Instrument/GetInstrumentInfo/{ins_id}"
             ins_info = get_data(url).json()["instrumentInfo"]
             clean_ins_info = self._clean_instrument_info(ins_info)
             df = pd.concat([df, pd.DataFrame.from_records([clean_ins_info])], ignore_index=True)
@@ -218,21 +220,21 @@ class InstrumentInfo:
 
     def option_info(self):
         ids = self.mw[self.mw["isin"].str.startswith("IRO9")]
-        df = self.get_instrument_info(ids.web_id.values).rename(columns={"symbol": "ua"})
+        df = self.get_instrument_info(ids.ins_id.values).rename(columns={"symbol": "ua"})
         return df.iloc[:, :9]
 
     def stock_info(self):
         ids = self.mw[self.mw["isin"].str.startswith(("IRO1", "IRO3"))]
-        return self.get_instrument_info(ids.web_id.values)
+        return self.get_instrument_info(ids.ins_id.values)
 
     def etf_info(self):
         ids = self.mw[self.mw["isin"].str.startswith(("IRT1", "IRT3"))]
-        return self.get_instrument_info(ids.web_id.values)
+        return self.get_instrument_info(ids.ins_id.values)
 
 
 class OrderBook:
 
-    def best_limits(self, ids: list):
+    def best_limits(self, ins_ids: list):
         cols = {"number": "quote",
                 "zOrdMeDem": "buy_no",
                 "qTitMeDem": "buy_vol",
@@ -240,12 +242,12 @@ class OrderBook:
                 "pMeOf": "sell_price",
                 "zOrdMeOf": "sell_no",
                 "qTitMeOf": "sell_vol",
-                "insCode": "web_id"}
+                "insCode": "ins_id"}
         df = pd.DataFrame()
-        for web_id in ids:
-            url = f"http://cdn.tsetmc.com/api/BestLimits/{web_id}"
+        for ins_id in ins_ids:
+            url = f"http://cdn.tsetmc.com/api/BestLimits/{ins_id}"
             best_limits = get_data(url).json()["bestLimits"]
             best_limits_df = pd.DataFrame.from_records(best_limits).rename(columns=cols)
-            best_limits_df["web_id"] = web_id
+            best_limits_df["ins_id"] = ins_id
             df = pd.concat([df, best_limits_df])
         return df

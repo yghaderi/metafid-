@@ -3,35 +3,26 @@ from datetime import datetime
 import time
 import os
 
+import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ...deriv.strategy import OptionStrategy
 from ...deriv.option import Pricing
 from ..db_psycopg import DB
-from src.metafid.data.tsetmc.tsetmc import TSETMC
-
-drop_cols = ["isin", "time", "open", "close", "no", "volume", "low", "high", "y_final", "eps", "base_vol", "unknown1",
-             "unknown2", "sector", "day_ul", "day_ll", "share_no", "mkt_id", "sell_no", "buy_no"]
+from ...data.tsetmc.tsetmc import MarketWatch
 
 
 class OptionStrategyMFW:
-    def __init__(self, dbname: str, user: str, pass_: str, ua_table: str, ostg_table: str, pct_daily_cp:float, interval: int):
+    def __init__(self, dbname: str, user: str, pass_: str, omw: pd.DataFrame, pct_monthly_cp: float,
+                 interval: int):
         self.db = DB(dbname=dbname, user=user, pass_=pass_)
-        self.ua = self.db.query_all(table=ua_table, cols="ua,sigma")
-        self.mw = TSETMC(drop_cols=drop_cols)
-
-        self.call = None
-        self.put = None
-        self.call_put = None
-        self.pct_daily_cp = pct_daily_cp
+        self.sigma = self.db.query_all(table="derivs_sigma", cols="*").rename(columns={"ua": "ua_symbol"})
+        self.omw = omw
+        self.pct_monthly_cp = pct_monthly_cp
         self.interval = interval
-        self.ostg_table = ostg_table
 
     def data(self):
-        self.omw = self.mw.option_mv(ua=self.ua.ua)
-        self.omw_df = self.omw.merge(self.ua, on="ua", how="inner")
-        df = self.omw.merge(self.ua, on="ua", how="inner")
-
+        df = self.omw.merge(self.sigma, on="ua_symbol", how="inner")
         pricing = Pricing()
         df["bs"] = df.apply(
             lambda x: pricing.black_scholes(s_0=x["ua_final"], k=x["strike_price"], t=x["t"], sigma=float(x["sigma"]),
@@ -43,30 +34,39 @@ class OptionStrategyMFW:
 
         def same_strike_and_ex_date_on_call_put(call, put):
             cols = [i for i in call.columns if not i.startswith("ua_") and i not in ["t", "sigma", "dt", "type"]]
+
             def cols_(x):
                 if (x.endswith("_x")) and (x.startswith("ua_")):
-                    return x.replace("_x","")
+                    return x.replace("_x", "")
                 elif (x.endswith("_x")):
-                    return "call_" + x.replace("_x","")
+                    return "call_" + x.replace("_x", "")
                 elif (x.endswith("_y")):
-                    return "put_" + x.replace("_y","")
+                    return "put_" + x.replace("_y", "")
                 else:
                     return x
+
             df = call.merge(put[cols], on=["ua", "strike_price", "ex_date"], how="inner")
             df.columns = list(map(cols_, df.columns))
             return df
+
         self.call_put = same_strike_and_ex_date_on_call_put(call=self.call, put=self.put)
         return self
 
-    def option_strategy(self):
-        data = self.data()
-        ostg = OptionStrategy(call=data.call, put=data.put, call_put=data.call_put, pct_daily_cp=self.pct_daily_cp)
-        return ostg.all_strategy()
+    def option_strategy(self, data):
+        return OptionStrategy(call=data.call, put=data.put, call_put=data.call_put, pct_monthly_cp=self.pct_monthly_cp)
+
+    def drop_and_insert(self, table: str, df):
+        try:
+            self.db.drop_all(table=table)
+            self.db.insert_data(table=table, df=df)
+            print(f"{datetime.now()}: Drop all '{table}' records and insert new data!", end="\r")
+        except:
+            print(f"Have a problem in the '{table}'!")
 
     def job(self):
-        self.db.drop_all(table=self.ostg_table)
-        self.db.insert_data(table=self.ostg_table, df=self.option_strategy())
-        print(f'Drop all {self.ostg_table} records and insert new data! The time is: {datetime.now()}', end="\r")
+        ostg = self.option_strategy(self.data())
+        self.drop_and_insert(table="derivs_coveredcall", df=ostg.covered_call())
+        self.drop_and_insert(table="derivs_marriedput", df=ostg.married_put())
 
     def do_job(self):
         scheduler = BackgroundScheduler()
