@@ -81,3 +81,6 @@ class OptionStrategyMFW:
         except (KeyboardInterrupt, SystemExit):
             # Not strictly necessary if daemonic mode is enabled but should be done if possible
             scheduler.shutdown()
+
+
+

@@ -43,7 +43,7 @@ class OptionStrategy:
                 pct_current_profit :
         """
 
-        df = self.call[self.call.buy_price > 0].copy()
+        df = self.call[(self.call.buy_price > 0) &(self.call.t > 0)].copy()
         stg = namedtuple("CoveredCall", "buy_ua buy_ua_at writing writing_at")
 
         df = df.assign(max_pot_profit=df.strike_price - df.ua_sell_price + df.buy_price,
@@ -75,7 +75,7 @@ class OptionStrategy:
                 current_profit : بر اساسِ قیمتِ کنونیِ داراییِ پایه محاسبه می‌شود
                 pct_current_profit :
         """
-        df = self.put[self.put.sell_price > 0].copy()
+        df = self.put[(self.put.sell_price > 0) & (self.put.t > 0)].copy()
 
         df = df.assign(max_pot_profit=np.inf,
                        max_pot_loss=df.strike_price - df.ua_sell_price - df.sell_price,
